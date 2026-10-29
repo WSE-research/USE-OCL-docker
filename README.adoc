@@ -1,0 +1,119 @@
+:toc:
+:toclevels: 5
+:toc-placement!:
+:source-highlighter: highlight.js
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+:github-repository: https://github.com/WSE-research/USE-OCL-docker
+endif::[]
+
+++++
+<a href="https://wse-research.org/" title="go to the WSE research group">
+<!-- relative path: the repo is private, so GitHub's camo proxy cannot load an absolute raw URL; a relative src is rewritten to an authenticated URL -->
+<img align="right" role="right" height="128" src="assets/wse-logo.png"/>
+</a>
+++++
+
+= USE OCL in Docker
+
+Run https://github.com/useocl/use[USE 7.5], the UML-based Specification Environment of the University of Bremen, in a container — without installing USE or Java 21. A tool of the https://wse-research.org/[Web & Software Engineering research group] at https://www.htwk-leipzig.de/[Leipzig University of Applied Sciences (HTWK Leipzig, Germany)], made for the UML/OCL exercises of the software engineering course.
+
+USE 7.5 needs Java 21, which many lab and student machines do not have. `run-use.sh` builds an image with USE on its first call and then starts USE in it, with the current directory mounted — with the graphical interface or as the USE shell in the terminal.
+
+* *Docker or Podman* — the script takes whichever works, Docker first; `USE_ENGINE` decides otherwise.
+* *GUI or shell* — the graphical interface uses the desktop session of the computer; `-nogui` gives the USE shell in the terminal.
+* *Verified download* — the image is built from the official USE release on GitHub, checked against its SHA-256.
+* *Your files stay yours* — whatever USE writes into the working directory belongs to the user who called the script.
+* *Works on the university PCs* — on the Linux PCs (Debian 12, rootless Podman, home on NFS, no subuid ranges) the script falls back to a private image store on the local disk.
+* *One image for everything* — the extension https://github.com/WSE-research/USE-OCL-vscode[USE-OCL-vscode] checks `.use` and `.soil` files in Visual Studio Code with the same image.
+
+---
+
+toc::[]
+
+---
+
+== Feature overview
+
+|===
+|Area |Highlights
+
+|Calls
+|`./run-use.sh [model.use [script.soil]]` opens the graphical interface, `-nogui` the USE shell, `--rebuild` builds the image again first; every other option goes to USE, for instance `-q` (with a script: check the invariants and exit with code 1 if one is violated) or `-h`. The current directory is `/work` in the container, so the model and the script must lie in it and are given as relative paths.
+
+|Image
+|`use-ocl:7.5.0`, built from `use-docker/Dockerfile` on the first call: Eclipse Temurin 21 (JRE, Ubuntu 24.04) with the X11 libraries and fonts the interface needs, and the USE release unpacked to `/opt/use`. A stalled download (below 1 kB/s for a minute) is aborted and tried again, up to three times.
+
+|Docker and Podman
+|The first engine whose `info` works is used; `podman-docker` and similar wrappers are recognised by their `--version`. With Docker (and rootful Podman) the container runs with the caller's user and group ids; with rootless Podman, root in the container already is the caller. On SELinux hosts (Fedora, RHEL) the container runs with `label=disable`, otherwise it could not read the directory.
+
+|University PCs
+|If Podman's default store cannot be used — on the university PCs it points to a shared directory owned by someone else — the script creates its own under `/var/tmp/use-ocl-<uid>` and says so. Without subuid ranges there is only the caller's id, so changes of ownership while unpacking the image are skipped, and apt in the image does not switch to its sandbox user. The store lies on the local disk of the PC: on every PC the image is built once, on the first call.
+
+|Graphical interface
+|Uses the X11 socket of the host and the session's authority cookie (`XAUTHORITY`, or `~/.Xauthority`), read-only, with the host's name in the container so that the cookie matches. Meant for Linux desktops with X11 or XWayland; without a graphical session, for instance over SSH, the script says to use `-nogui`.
+
+|Tested on
+|Ubuntu with Docker: shell, scripts, `-q` exit codes and the graphical interface (under Xvfb). A university PC (Debian 12, Podman 4.3.1) with an empty store, on 29 October 2026: the first call, image build included, took 30 s; `-q` exit codes, calls from a subdirectory, the owner of a written file, the message without a graphical session and `--rebuild` all worked. The graphical interface could not be tested there (no graphical session over SSH).
+|===
+
+== Architecture
+
+Two files: `run-use.sh` and `use-docker/Dockerfile`. The script chooses the engine, builds the image when it is missing and starts the container with the right options for the engine and the session; the Dockerfile describes the image.
+
+Three decisions carry most of the design:
+
+* *The engine is detected by what works, not by its name.* `docker` may be Podman (package `podman-docker`), and `podman` may be a link to Docker. The script tries `info`, then reads `--version` to know the real flavour, because the user mapping differs: Docker needs `--user`, rootless Podman must not get it (without subuid ranges, `keep-id` fails).
+* *The store follows the machine, not the user.* Rootless Podman cannot keep its store on NFS, and the default store of the university PCs is shared and owned by another account. The fallback store therefore lies under `/var/tmp` on the local disk (`USE_PODMAN_STORE` moves it; keep it off NFS), with `ignore_chown_errors` so that the image unpacks with a single id.
+* *The image is pinned.* The base image is named in full (`docker.io/library/…`), so Podman needs no list of registries for short names, and the USE release is checked against a fixed SHA-256; a new USE version is a deliberate change of `USE_VERSION` and `USE_SHA256`.
+
+== Building and Running
+
+=== Running USE
+
+[source, bash]
+----
+./run-use.sh                                  # graphical interface
+./run-use.sh model.use script.soil            # with a model and a script
+./run-use.sh -nogui model.use script.soil     # USE shell in the terminal
+./run-use.sh -nogui -q model.use script.soil  # check only: exit code 1 if an invariant is violated
+./run-use.sh --rebuild -nogui                 # build the image again first
+----
+
+The first call builds the image, which loads the base image and the USE release; depending on the network that takes from half a minute to several minutes. With stdin at its end the USE shell exits and closes the graphical interface with it, so start the GUI from a terminal and leave it open.
+
+=== Choosing the engine and the store
+
+[source, bash]
+----
+USE_ENGINE=podman ./run-use.sh -nogui                      # use Podman even if Docker works
+USE_PODMAN_STORE=/var/tmp/my-use-store ./run-use.sh -nogui  # another place for the fallback store
+----
+
+=== Building the image by hand
+
+[source, bash]
+----
+docker build -t use-ocl:7.5.0 use-docker
+----
+
+=== Removing the image store on a university PC
+
+The fallback store takes about 430 MB per user and PC. Some directories in it are write-protected, so make them writable before deleting it:
+
+[source, bash]
+----
+chmod -R u+rwX /var/tmp/use-ocl-$(id -u) && rm -rf /var/tmp/use-ocl-$(id -u)
+----
+
+== Contribute
+
+We are happy to receive your contributions. Please create a pull request or an {github-repository}/issues/new[issue]. Published under the {github-repository}/blob/main/LICENSE[MIT license]; feel free to {github-repository}/fork[fork] it.
+
+== Disclaimer
+
+This tool is provided "as is" and without any warranty, express or implied. It does not contain USE: the image downloads https://github.com/useocl/use[USE] (University of Bremen, GPL-2.0-or-later) from its official releases when it is built, on top of the https://hub.docker.com/_/eclipse-temurin[Eclipse Temurin] base image.
