@@ -1,0 +1,12 @@
+-- Kleines Modell für den Rauchtest der Images (siehe .github/workflows/release.yml)
+model Smoke
+
+class Konto
+attributes
+  saldo : Integer
+end
+
+constraints
+
+context Konto inv NichtNegativ:
+  self.saldo >= 0

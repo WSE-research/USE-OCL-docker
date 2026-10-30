@@ -1,0 +1,66 @@
+# Neues Release, sobald sich der Code auf main ändert (run-use.sh oder das
+# Dockerfile, also nach einem Merge): Es wird zum neuesten Release ("Latest")
+# und enthält USE-OCL-docker.zip, immer erreichbar unter
+# https://github.com/WSE-research/USE-OCL-docker/releases/latest/download/USE-OCL-docker.zip
+# Vorher wird das Image gebaut und mit einem kleinen Modell geprüft; in Pull
+# Requests läuft nur diese Prüfung.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - run-use.sh
+      - use-docker/**
+  pull_request:
+    paths:
+      - run-use.sh
+      - use-docker/**
+      - test/**
+      - .github/workflows/release.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # jede bekannte Version, damit eine falsche Prüfsumme im Dockerfile auffällt
+    strategy:
+      matrix:
+        use-version: ["7.5.0", "7.1.1", "7.1.0", "7.0.1"]
+    env:
+      USE_VERSION: ${{ matrix.use-version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Image bauen und mit einem kleinen Modell prüfen
+        working-directory: test
+        run: |
+          ../run-use.sh -nogui -q smoke.use ok.soil
+          echo check | ../run-use.sh -nogui smoke.use violated.soil | tee violated.out
+          grep -q "NichtNegativ': FAILED" violated.out
+
+  release:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # nacheinander, damit das Release des letzten Merges "Latest" bleibt
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          use=$(sed -n 's/^ARG USE_VERSION=//p' use-docker/Dockerfile)
+          tag="v$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          mkdir -p dist/USE-OCL-docker/use-docker
+          cp run-use.sh README.adoc LICENSE dist/USE-OCL-docker/
+          cp use-docker/Dockerfile dist/USE-OCL-docker/use-docker/
+          (cd dist && zip -qr USE-OCL-docker.zip USE-OCL-docker)
+          gh release create "$tag" dist/USE-OCL-docker.zip \
+            --target "$GITHUB_SHA" --latest \
+            --title "USE-OCL-docker $(date -u +%Y-%m-%d) (USE $use)" \
+            --notes "Unzip, change to the folder with your model and start USE, e.g. \`../USE-OCL-docker/run-use.sh -nogui model.use\`. Default version: USE $use; \`USE_VERSION=7.1.1 ./run-use.sh\` selects another one." \
+            --generate-notes

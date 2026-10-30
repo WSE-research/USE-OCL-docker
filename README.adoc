@@ -20,12 +20,27 @@ endif::[]
 
 = USE OCL in Docker
 
-Run https://github.com/useocl/use[USE 7.5], the UML-based Specification Environment of the University of Bremen, in a container — without installing USE or Java 21. A tool of the https://wse-research.org/[Web & Software Engineering research group] at https://www.htwk-leipzig.de/[Leipzig University of Applied Sciences (HTWK Leipzig, Germany)], made for the UML/OCL exercises of the software engineering course.
+*Easy running of the USE OCL tool: no installation of Java, libraries or packages — just Docker and go.*
 
-USE 7.5 needs Java 21, which many lab and student machines do not have. `run-use.sh` builds an image with USE on its first call and then starts USE in it, with the current directory mounted — with the graphical interface or as the USE shell in the terminal.
+https://github.com/useocl/use[USE], the UML-based Specification Environment of the University of Bremen, checks UML models and their OCL constraints: you describe classes, create objects and links, and USE tells you which invariants, preconditions and postconditions hold. Installing USE yourself means Java 21 and a few graphics libraries, which many lab and student machines do not have. This repository packs all of that into a container, so your computer needs nothing but Docker (or Podman).
+
+. Get the script: `git clone https://github.com/WSE-research/USE-OCL-docker.git`, or download and unzip https://github.com/WSE-research/USE-OCL-docker/releases/latest/download/USE-OCL-docker.zip[USE-OCL-docker.zip] from the latest release.
+. Change to the folder with your model and call the script from there (here the script lies in your home directory):
++
+[source, bash]
+----
+cd my-model
+~/USE-OCL-docker/run-use.sh model.use          # graphical interface
+~/USE-OCL-docker/run-use.sh -nogui model.use   # USE shell in the terminal
+----
+
+The first call builds the image once, which takes half a minute to a few minutes; after that USE starts in seconds. A tool of the https://wse-research.org/[Web & Software Engineering research group] at https://www.htwk-leipzig.de/[Leipzig University of Applied Sciences (HTWK Leipzig, Germany)], made for the UML/OCL exercises of the software engineering course.
+
+What the script takes care of:
 
 * *Docker or Podman* — the script takes whichever works, Docker first; `USE_ENGINE` decides otherwise.
 * *GUI or shell* — the graphical interface uses the desktop session of the computer; `-nogui` gives the USE shell in the terminal.
+* *Any USE version* — USE 7.5.0 by default; `USE_VERSION` selects another release, each in an image of its own.
 * *Verified download* — the image is built from the official USE release on GitHub, checked against its SHA-256.
 * *Your files stay yours* — whatever USE writes into the working directory belongs to the user who called the script.
 * *Works on the university PCs* — on the Linux PCs (Debian 12, rootless Podman, home on NFS, no subuid ranges) the script falls back to a private image store on the local disk.
@@ -46,7 +61,13 @@ toc::[]
 |`./run-use.sh [model.use [script.soil]]` opens the graphical interface, `-nogui` the USE shell, `--rebuild` builds the image again first; every other option goes to USE, for instance `-q` (with a script: check the invariants and exit with code 1 if one is violated) or `-h`. The current directory is `/work` in the container, so the model and the script must lie in it and are given as relative paths.
 
 |Image
-|`use-ocl:7.5.0`, built from `use-docker/Dockerfile` on the first call: Eclipse Temurin 21 (JRE, Ubuntu 24.04) with the X11 libraries and fonts the interface needs, and the USE release unpacked to `/opt/use`. A stalled download (below 1 kB/s for a minute) is aborted and tried again, up to three times.
+|`use-ocl:7.5.0` (another USE version: `use-ocl:<version>`), built from `use-docker/Dockerfile` on the first call: Eclipse Temurin 21 (JRE, Ubuntu 24.04) with the X11 libraries and fonts the interface needs, and the USE release unpacked to `/opt/use`. A stalled download (below 1 kB/s for a minute) is aborted and tried again, up to three times.
+
+|USE versions
+|USE 7.5.0 by default. `USE_VERSION=7.1.1` (or 7.1.0, 7.0.1) builds and uses an image of its own, `use-ocl:7.1.1`; the default image stays as it is. The release files of USE are named differently from version to version, so the Dockerfile lists file name and SHA-256 for these versions. For any other release give the checksum with `USE_SHA256` (GitHub shows it next to the file on the release page); the file name is then expected as for 7.5.0, `use-<version>-use-bin.zip`. USE 7.0.0 is left out: its file is a snapshot build, replaced by 7.0.1 on the same day.
+
+|Releases
+|Every change of `run-use.sh` or the Dockerfile that reaches `main` becomes the latest release, once the image has been built and checked with a small model for every known USE version (`.github/workflows/release.yml`; pull requests run the same check). The release carries `USE-OCL-docker.zip` with the script, the Dockerfile, this README and the license; https://github.com/WSE-research/USE-OCL-docker/releases/latest/download/USE-OCL-docker.zip always points to the newest one. Tags have the form `vYYYY.MM.DD-<commit>`.
 
 |Docker and Podman
 |The first engine whose `info` works is used; `podman-docker` and similar wrappers are recognised by their `--version`. With Docker (and rootful Podman) the container runs with the caller's user and group ids; with rootless Podman, root in the container already is the caller. On SELinux hosts (Fedora, RHEL) the container runs with `label=disable`, otherwise it could not read the directory.
@@ -58,18 +79,18 @@ toc::[]
 |Uses the X11 socket of the host and the session's authority cookie (`XAUTHORITY`, or `~/.Xauthority`), read-only, with the host's name in the container so that the cookie matches. Meant for Linux desktops with X11 or XWayland; without a graphical session, for instance over SSH, the script says to use `-nogui`.
 
 |Tested on
-|Ubuntu with Docker: shell, scripts, `-q` exit codes and the graphical interface (under Xvfb). A university PC (Debian 12, Podman 4.3.1) with an empty store, on 29 October 2026: the first call, image build included, took 30 s; `-q` exit codes, calls from a subdirectory, the owner of a written file, the message without a graphical session and `--rebuild` all worked. The graphical interface could not be tested there (no graphical session over SSH).
+|Ubuntu with Docker: shell, scripts, `-q` exit codes and the graphical interface (under Xvfb). A university PC (Debian 12, Podman 4.3.1) with an empty store, on 29 October 2026: the first call, image build included, took 30 s; `-q` exit codes, calls from a subdirectory, the owner of a written file, the message without a graphical session and `--rebuild` all worked. The graphical interface could not be tested there (no graphical session over SSH). USE versions, on 30 October 2026 with Docker on Ubuntu: 7.5.0, 7.1.1, 7.1.0 and 7.0.1 each built in an image of its own, and `-q` gave exit code 0 for a valid and 1 for a violated invariant in every version; an unknown version without `USE_SHA256`, a wrong checksum and a version such as `latest` all stop with a message.
 |===
 
 == Architecture
 
-Two files: `run-use.sh` and `use-docker/Dockerfile`. The script chooses the engine, builds the image when it is missing and starts the container with the right options for the engine and the session; the Dockerfile describes the image.
+Two files: `run-use.sh` and `use-docker/Dockerfile`. The script chooses the engine, builds the image when it is missing and starts the container with the right options for the engine and the session; the Dockerfile describes the image. The workflow `.github/workflows/release.yml` checks both and publishes them as a release; `test/` holds the small model it uses.
 
 Three decisions carry most of the design:
 
 * *The engine is detected by what works, not by its name.* `docker` may be Podman (package `podman-docker`), and `podman` may be a link to Docker. The script tries `info`, then reads `--version` to know the real flavour, because the user mapping differs: Docker needs `--user`, rootless Podman must not get it (without subuid ranges, `keep-id` fails).
 * *The store follows the machine, not the user.* Rootless Podman cannot keep its store on NFS, and the default store of the university PCs is shared and owned by another account. The fallback store therefore lies under `/var/tmp` on the local disk (`USE_PODMAN_STORE` moves it; keep it off NFS), with `ignore_chown_errors` so that the image unpacks with a single id.
-* *The image is pinned.* The base image is named in full (`docker.io/library/…`), so Podman needs no list of registries for short names, and the USE release is checked against a fixed SHA-256; a new USE version is a deliberate change of `USE_VERSION` and `USE_SHA256`.
+* *The image is pinned.* The base image is named in full (`docker.io/library/…`), so Podman needs no list of registries for short names, and every USE release is checked against a fixed SHA-256; supporting a further USE version is a deliberate new entry in the list of the Dockerfile (or `USE_SHA256` for a single build).
 
 == Building and Running
 
@@ -77,14 +98,17 @@ Three decisions carry most of the design:
 
 [source, bash]
 ----
-./run-use.sh                                  # graphical interface
-./run-use.sh model.use script.soil            # with a model and a script
-./run-use.sh -nogui model.use script.soil     # USE shell in the terminal
-./run-use.sh -nogui -q model.use script.soil  # check only: exit code 1 if an invariant is violated
-./run-use.sh --rebuild -nogui                 # build the image again first
+./run-use.sh                                      # graphical interface
+./run-use.sh model.use script.soil                # with a model and a script
+./run-use.sh -nogui model.use script.soil         # USE shell in the terminal
+./run-use.sh -nogui -q model.use script.soil      # check only: exit code 1 if an invariant is violated
+./run-use.sh --rebuild -nogui                     # build the image again first
+USE_VERSION=7.1.1 ./run-use.sh -nogui model.use   # another USE version, in its own image use-ocl:7.1.1
 ----
 
 The first call builds the image, which loads the base image and the USE release; depending on the network that takes from half a minute to several minutes. With stdin at its end the USE shell exits and closes the graphical interface with it, so start the GUI from a terminal and leave it open.
+
+Without `USE_VERSION` the script takes USE 7.5.0. Known versions are 7.5.0, 7.1.1, 7.1.0 and 7.0.1; for any other release give its checksum as well: `USE_VERSION=<version> USE_SHA256=<sha256> ./run-use.sh -nogui`. Every version is built once, on its first call.
 
 === Choosing the engine and the store
 
@@ -99,6 +123,7 @@ USE_PODMAN_STORE=/var/tmp/my-use-store ./run-use.sh -nogui  # another place for 
 [source, bash]
 ----
 docker build -t use-ocl:7.5.0 use-docker
+docker build --build-arg USE_VERSION=7.1.1 -t use-ocl:7.1.1 use-docker
 ----
 
 === Removing the image store on a university PC

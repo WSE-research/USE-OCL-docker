@@ -1,0 +1,2 @@
+!create k : Konto
+!k.saldo := -1
