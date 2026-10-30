@@ -7,19 +7,29 @@
 # Aufruf: ./run-use.sh [modell.use [skript.soil]]           grafische Oberfläche
 #         ./run-use.sh -nogui [modell.use [skript.soil]]    USE-Shell im Terminal
 #         ./run-use.sh --rebuild [...]                      Image vorher neu bauen
+#         USE_VERSION=7.1.1 ./run-use.sh [...]              andere USE-Version
 #
 # Weitere Optionen werden an USE durchgereicht (z. B. -nr, -q, -h). Das aktuelle
 # Verzeichnis ist im Container /work: Dateien müssen darin liegen und werden
 # relativ angegeben. Das Image (use-ocl:7.5.0) wird beim ersten Aufruf aus
-# use-docker/Dockerfile gebaut. Mit USE_ENGINE=docker oder USE_ENGINE=podman
-# lässt sich das Werkzeug fest vorgeben. Ist der Standardspeicher von Podman
-# nicht nutzbar, legt das Skript einen eigenen an (/var/tmp/use-ocl-<uid>,
-# änderbar mit USE_PODMAN_STORE; sollte auf einer lokalen Platte liegen, nicht
-# auf NFS).
+# use-docker/Dockerfile gebaut. Mit USE_VERSION wird eine andere Version von
+# USE genommen, jede in ihrem eigenen Image (use-ocl:<version>); bekannt sind
+# 7.0.1, 7.1.0, 7.1.1 und 7.5.0, für andere zusätzlich USE_SHA256 angeben. Mit
+# USE_ENGINE=docker oder USE_ENGINE=podman lässt sich das Werkzeug fest
+# vorgeben. Ist der Standardspeicher von Podman nicht nutzbar, legt das Skript
+# einen eigenen an (/var/tmp/use-ocl-<uid>, änderbar mit USE_PODMAN_STORE;
+# sollte auf einer lokalen Platte liegen, nicht auf NFS).
 
 set -euo pipefail
 
-IMAGE="use-ocl:7.5.0"
+USE_VERSION=${USE_VERSION:-7.5.0}
+if [[ ! $USE_VERSION =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+  echo "USE_VERSION=$USE_VERSION: erwartet wird eine Versionsnummer wie 7.5.0." >&2
+  exit 1
+fi
+IMAGE="use-ocl:$USE_VERSION"
+build_args=(--build-arg "USE_VERSION=$USE_VERSION")
+[[ -n ${USE_SHA256:-} ]] && build_args+=(--build-arg "USE_SHA256=$USE_SHA256")
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Container-Werkzeug wählen: das erste, das installiert ist und läuft
@@ -66,10 +76,10 @@ if "${engine[0]}" --version 2>/dev/null | grep -qi podman; then flavor=podman; e
 
 if [[ ${1:-} == --rebuild ]]; then
   shift
-  "${engine[@]}" build -t "$IMAGE" "$HERE/use-docker"
+  "${engine[@]}" build "${build_args[@]}" -t "$IMAGE" "$HERE/use-docker"
 elif ! "${engine[@]}" image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "Baue das Image $IMAGE mit ${engine[0]} (einmalig, lädt USE von GitHub) ..." >&2
-  "${engine[@]}" build -t "$IMAGE" "$HERE/use-docker"
+  "${engine[@]}" build "${build_args[@]}" -t "$IMAGE" "$HERE/use-docker"
 fi
 
 args=(--rm -i -e HOME=/tmp -v "$PWD:/work" -w /work)
